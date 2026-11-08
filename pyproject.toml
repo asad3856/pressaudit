@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pressaudit"
+version = "0.3.0"
+description = "Detection-only WordPress security scanner: fingerprint core, plugins and themes, flag known vulnerabilities and common exposures, with fix guidance."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "asad3856"}]
+keywords = ["wordpress", "security", "scanner", "vulnerability", "audit"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+
+[project.urls]
+Homepage = "https://github.com/asad3856/pressaudit"
+Repository = "https://github.com/asad3856/pressaudit"
+
+[project.scripts]
+pressaudit = "pressaudit.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pressaudit = ["data/*.json"]
