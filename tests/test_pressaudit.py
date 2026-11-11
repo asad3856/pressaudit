@@ -9,7 +9,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from pressaudit import __version__, vulndb, wpscan
+from pressaudit import __version__, vulndb, wpscan, wpvuln
 from pressaudit.cli import main
 from pressaudit.report import format_html, format_json, format_text
 from pressaudit.scanner import Scanner, scan_url
@@ -240,7 +240,7 @@ class MockWPTests(unittest.TestCase):
         self.assertEqual(wpscan.lookup("plugins", "revslider", "4.1.4", ""), [])
 
     def test_version(self):
-        self.assertEqual(__version__, "0.3.0")
+        self.assertEqual(__version__, "0.4.0")
 
     def test_parallel_matches_sequential(self):
         seq_findings, seq_scanner = scan_url(self.url, timeout=5, delay=0,
@@ -277,8 +277,8 @@ class MockWPTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 out = os.path.join(tmp, "vulndb.json")
-                fetched, total, path = update_db(
-                    "fake-key", out_path=out, delay=0)
+                fetched, total, path, stats = update_db(
+                    "fake-key", out_path=out, delay=0, source="wpscan")
                 self.assertGreaterEqual(fetched, 50)
                 self.assertEqual(path, out)
                 with open(out, encoding="utf-8") as handle:
@@ -293,10 +293,82 @@ class MockWPTests(unittest.TestCase):
         finally:
             wpscan_mod.fetch_json = original
 
+    def test_update_db_wpvulnerability_mocked(self):
+        import os
+        import tempfile
+        from pressaudit import wpvuln as wpvuln_mod
+        from pressaudit.updatedb import update_db_wpvulnerability
+
+        def fake_plugin(slug, timeout=15):
+            if slug == "revslider":
+                return {"error": 0, "message": None, "data": {
+                    "name": "Slider Revolution",
+                    "plugin": "revslider",
+                    "vulnerability": [
+                        {"uuid": "x1", "name": "Test Vuln < 2.0",
+                         "description": None,
+                         "operator": {"min_version": None,
+                                      "min_operator": None,
+                                      "max_version": "2.0",
+                                      "max_operator": "lt",
+                                      "unfixed": "0", "closed": "0"},
+                         "source": [{"id": "CVE-2020-1234",
+                                     "name": "CVE-2020-1234",
+                                     "link": "", "description": "d",
+                                     "date": "2020-01-01"}],
+                         "impact": {"cvss3": {"score": "9.8",
+                                              "severity": "critical"}}},
+                        # Unfixed entry: skipped, never guessed.
+                        {"uuid": "x2", "name": "Unfixed Vuln",
+                         "description": None,
+                         "operator": {"min_version": None,
+                                      "min_operator": None,
+                                      "max_version": None,
+                                      "max_operator": None,
+                                      "unfixed": "1", "closed": "0"},
+                         "source": [], "impact": {}}]}}
+            return {"error": 0, "message": None,
+                    "data": {"name": slug, "plugin": slug,
+                             "vulnerability": []}}
+
+        originals = (wpvuln_mod.fetch_plugin, wpvuln_mod.fetch_theme,
+                     wpvuln_mod.fetch_core)
+        wpvuln_mod.fetch_plugin = fake_plugin
+        wpvuln_mod.fetch_theme = lambda slug, timeout=15: {
+            "error": 0, "message": None,
+            "data": {"name": slug, "theme": slug, "vulnerability": []}}
+        wpvuln_mod.fetch_core = lambda version, timeout=15: {
+            "error": 0, "message": None,
+            "data": {"core": version, "vulnerability": []}}
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = os.path.join(tmp, "vulndb.json")
+                fetched, total, path, stats = update_db_wpvulnerability(
+                    out_path=out, delay=0)
+                self.assertGreaterEqual(fetched, 50)
+                self.assertEqual(path, out)
+                self.assertEqual(stats["skipped"], 1)
+                with open(out, encoding="utf-8") as handle:
+                    data = json.load(handle)
+                self.assertGreaterEqual(total, 9)
+                revslider = data["plugins"].get("revslider", [])
+                self.assertTrue(any(e.get("fixed_in") == "2.0"
+                                    and e.get("cve") == "CVE-2020-1234"
+                                    for e in revslider))
+                self.assertFalse(any(e.get("title") == "Unfixed Vuln"
+                                     for e in revslider))
+                # Curated entries kept.
+                self.assertTrue(any(e.get("max_affected") == "4.1.4"
+                                    for e in revslider))
+                self.assertIn("WPVulnerability", data["source"])
+        finally:
+            (wpvuln_mod.fetch_plugin, wpvuln_mod.fetch_theme,
+             wpvuln_mod.fetch_core) = originals
+
     def test_update_db_requires_key(self):
         with self.assertRaises(ValueError):
-            update_db("")
-        self.assertEqual(main(["update-db", "--wpscan-api-key", ""]), 2)
+            update_db("", source="wpscan")
+        self.assertEqual(main(["update-db", "--source", "wpscan"]), 2)
 
     def test_cli_exit_code(self):
         self.assertEqual(main(["scan", self.url, "--quiet"]), 1)
@@ -341,6 +413,105 @@ class WPScanTests(unittest.TestCase):
         self.assertEqual(wpscan.parse_vulnerabilities(data, "4.2"), [])
         self.assertEqual(wpscan.parse_vulnerabilities({}, "4.1.4"), [])
         self.assertEqual(wpscan.parse_vulnerabilities(None, "4.1.4"), [])
+
+
+class WPVulnTests(unittest.TestCase):
+    def _item(self, name, max_version, max_operator, unfixed="0",
+              min_version=None, cve="CVE-2020-35489", score="10.0"):
+        return {"uuid": "u1", "name": name, "description": None,
+                "operator": {"min_version": min_version,
+                             "min_operator": None,
+                             "max_version": max_version,
+                             "max_operator": max_operator,
+                             "unfixed": unfixed, "closed": "0"},
+                "source": [{"id": cve, "name": cve, "link": "",
+                            "description": "Test description",
+                            "date": "2020-12-17"}],
+                "impact": {"cvss3": {"score": score,
+                                     "severity": "critical"}}}
+
+    def _payload(self, items):
+        return {"error": 0, "message": None,
+                "data": {"name": "Test", "plugin": "test",
+                         "vulnerability": items}}
+
+    def test_parse_lt_becomes_fixed_in(self):
+        entries, skipped = wpvuln.parse_vulnerabilities(self._payload([
+            self._item("Test < 5.3.2", "5.3.2", "lt")]))
+        self.assertEqual(skipped, 0)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["fixed_in"], "5.3.2")
+        self.assertEqual(entries[0]["cve"], "CVE-2020-35489")
+        self.assertEqual(entries[0]["cvss_score"], "10.0")
+
+    def test_parse_le_becomes_max_affected(self):
+        entries, skipped = wpvuln.parse_vulnerabilities(self._payload([
+            self._item("Test <= 5.0.3", "5.0.3", "le")]))
+        self.assertEqual(skipped, 0)
+        self.assertEqual(entries[0]["max_affected"], "5.0.3")
+        self.assertNotIn("fixed_in", entries[0])
+
+    def test_parse_skips_unfixed_and_ranged(self):
+        entries, skipped = wpvuln.parse_vulnerabilities(self._payload([
+            self._item("Unfixed", None, None, unfixed="1"),
+            self._item("Ranged", "3.0", "lt", min_version="2.0"),
+            {"uuid": "u3", "name": "No operator", "source": [],
+             "impact": {}},
+        ]))
+        self.assertEqual(entries, [])
+        self.assertEqual(skipped, 3)
+
+    def test_parse_bad_payload(self):
+        entries, skipped = wpvuln.parse_vulnerabilities(None)
+        self.assertEqual(entries, [])
+        self.assertEqual(skipped, 1)
+
+    def test_core_fixed_in_patterns(self):
+        def item(text):
+            return {"uuid": "u", "name": "4.7.1", "description": None,
+                    "source": [{"id": "CVE-2022-21661",
+                                "name": "CVE-2022-21661", "link": "",
+                                "description": text, "date": "2022-01-06"}],
+                    "impact": {}}
+        fixed, _, found = wpvuln.extract_core_fixed_in(
+            item("This has been patched in WordPress version 5.8.3."))
+        self.assertTrue(found)
+        self.assertEqual(fixed, "5.8.3")
+        fixed, _, found = wpvuln.extract_core_fixed_in(
+            item("WordPress <= 5.8.2 - SQL Injection vulnerability"))
+        self.assertTrue(found)
+        self.assertEqual(_, "5.8.2")
+        fixed, _, found = wpvuln.extract_core_fixed_in(
+            item("The plugin before 5.0.4 for WordPress has an issue."))
+        self.assertTrue(found)
+        self.assertEqual(fixed, "5.0.4")
+        _, _, found = wpvuln.extract_core_fixed_in(
+            item("CVE-2025-58674"))
+        self.assertFalse(found)
+
+    def test_parse_core_vulnerabilities(self):
+        payload = {"error": 0, "message": None,
+                   "data": {"core": "4.7.1", "vulnerability": [
+                       {"uuid": "u1", "name": "4.7.1", "description": None,
+                        "source": [{"id": "CVE-2022-21661",
+                                    "name": "WordPress <= 5.8.2 - SQLi",
+                                    "link": "",
+                                    "description": "SQL injection. "
+                                    "Fixed in version 5.8.3.",
+                                    "date": "2022-01-06"}],
+                        "impact": {"cvss3": {"score": "7.5",
+                                             "severity": "high"}}},
+                       {"uuid": "u2", "name": "4.7.1", "description": None,
+                        "source": [{"id": "CVE-2025-58674",
+                                    "name": "CVE-2025-58674", "link": "",
+                                    "description": "", "date": None}],
+                        "impact": {}},
+                   ]}}
+        entries, skipped = wpvuln.parse_core_vulnerabilities(payload)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(skipped, 1)
+        self.assertEqual(entries[0]["fixed_in"], "5.8.3")
+        self.assertEqual(entries[0]["cve"], "CVE-2022-21661")
 
 
 if __name__ == "__main__":

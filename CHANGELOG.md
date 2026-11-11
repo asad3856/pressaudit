@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — 9 Nov 2026
+
+- `pressaudit update-db` now uses the WPVulnerability API by default:
+  free, no API key, no account, no daily limit (CC0 1.0 public-domain
+  data, aggregated from CVE, EUVD, JVN, Patchstack, Wordfence, WPScan).
+  Live demo 9 Nov 2026: 74 components fetched, 1,686 new entries added
+  (database 8 → 1,694 entries); Contact Form 7 5.3.1 now matches 7
+  vulnerabilities, File Manager 6.8 matches 10, core 4.7.1 matches 272.
+- Plugin/theme records map exactly (machine-readable `<` / `<=`
+  operators). Core records are version-scoped, so the fixed version is
+  recovered from source texts ("fixed in 5.8.3", "<= 5.8.2"); entries
+  whose bound cannot be recovered are skipped and counted, never guessed
+  (441 skipped in the demo run). Unfixed and version-ranged entries are
+  skipped the same way.
+- WPScan stays as an optional second source: `update-db --source wpscan
+  --wpscan-api-key KEY` (free tier 25 requests/day). New module
+  `wpvuln.py`; 28 tests pass (was 21).
+
 ## 0.3.0 — 8 Nov 2026
 
 - Bigger offline database: `data/vulndb.json` (verified entries, including

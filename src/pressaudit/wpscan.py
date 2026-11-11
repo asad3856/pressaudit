@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 
 API_BASE = "https://wpscan.com/api/v3"
-USER_AGENT = "PressAudit/0.3.0 (+https://github.com/asad3856/pressaudit)"
+USER_AGENT = "PressAudit/0.4.0 (+https://github.com/asad3856/pressaudit)"
 
 
 def build_url(kind, slug=None):

@@ -55,9 +55,15 @@ def build_parser():
     multi.add_argument("--mode", choices=["fast", "deep"], default="fast")
     upd = sub.add_parser(
         "update-db",
-        help="Build a larger local vulnerability database from the WPScan API")
-    upd.add_argument("--wpscan-api-key", required=True,
-                     help="WPScan API token (free at https://wpscan.com/api)")
+        help="Build a large local vulnerability database from a free API")
+    upd.add_argument("--source", choices=["wpvulnerability", "wpscan"],
+                     default="wpvulnerability",
+                     help="WPVulnerability (default): free, no API key, "
+                     "CC0 data. wpscan: needs --wpscan-api-key "
+                     "(free tier 25 requests/day)")
+    upd.add_argument("--wpscan-api-key", default=None,
+                     help="WPScan API token, only for --source wpscan "
+                     "(free at https://wpscan.com/api)")
     upd.add_argument("--out", default=None,
                      help="Output path (default ~/.pressaudit/vulndb.json)")
     upd.add_argument("--timeout", type=float, default=10)
@@ -90,17 +96,25 @@ def _run_update_db(args):
         label = "core" if kind == "core" else "%s/%s" % (kind, slug)
         print("  %s %s" % ("ok  " if ok else "fail", label))
 
+    if args.source == "wpscan" and not args.wpscan_api_key:
+        print("pressaudit: --source wpscan needs --wpscan-api-key "
+              "(free at https://wpscan.com/api)", file=sys.stderr)
+        return 2
     try:
-        fetched, total, path = update_db(
+        fetched, total, path, stats = update_db(
             args.wpscan_api_key, out_path=args.out,
-            timeout=args.timeout, progress=progress)
+            timeout=args.timeout, progress=progress, source=args.source)
     except ValueError as exc:
         print("pressaudit: %s" % exc, file=sys.stderr)
         return 2
-    print("pressaudit: fetched %d components, database now holds %d "
-          "entries: %s" % (fetched, total, path))
-    print("Note: the free WPScan tier allows 25 API requests per day, so a "
-          "full refresh may take several days. Re-run to continue.")
+    print("pressaudit: source %s, fetched %d components, added %d new "
+          "entries (%d skipped: no usable version bound), database now "
+          "holds %d entries: %s"
+          % (args.source, fetched, stats["added"], stats["skipped"],
+             total, path))
+    if args.source == "wpscan":
+        print("Note: the free WPScan tier allows 25 API requests per day, "
+              "so a full refresh may take several days. Re-run to continue.")
     return 0
 
 

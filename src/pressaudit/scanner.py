@@ -23,7 +23,7 @@ import urllib.request
 
 from . import vulndb, wpscan
 
-USER_AGENT = "PressAudit/0.3.0 (+https://github.com/asad3856/pressaudit)"
+USER_AGENT = "PressAudit/0.4.0 (+https://github.com/asad3856/pressaudit)"
 MAX_BODY = 1_000_000
 POLITE_DELAY = 0.15
 

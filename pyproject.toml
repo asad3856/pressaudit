@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pressaudit"
-version = "0.3.0"
+version = "0.4.0"
 description = "Detection-only WordPress security scanner: fingerprint core, plugins and themes, flag known vulnerabilities and common exposures, with fix guidance."
 readme = "README.md"
 license = {text = "MIT"}
