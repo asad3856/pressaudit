@@ -1,6 +1,6 @@
 # PressAudit
 
-**Detection-only WordPress security scanner.** Point it at a WordPress site you own (or have permission to test) and it tells you what's exposed and how to fix it — core version and known vulnerabilities, plugin/theme versions, user enumeration, XML-RPC, leaked debug logs and config backups, missing security headers — with a fix for every finding.
+**PressAudit is a free WordPress vulnerability scanner.** Point it at a WordPress site you own (or have permission to test) and it tells you what's exposed and how to fix it — core version and known vulnerabilities, plugin/theme versions, user enumeration, XML-RPC, leaked debug logs and config backups, missing security headers — with a fix for every finding.
 
 Standard library only. No dependencies, no network calls except to the target, no account, no API key needed. Python 3.9+.
 
